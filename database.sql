@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 DROP TABLE IF EXISTS login_attempts;
 
 INSERT INTO users (student_number, email, password_hash)
-VALUES ('2026-07-00256', 'jiem10@gmail.com', '$2y$12$m41apc2GYjBOFpXjTCgI8uBDiKkhQBcJtB4W6XgbKj21DVyzAJjgS')
+VALUES ('2024-07-00259', 'jugan.johnmark.bandico@gmail.com', '$2y$10$M8rhs7baT7NKS1acQpziYe6/ea9eZr5jc86d5uVjOg883d37Avm.q')
 ON DUPLICATE KEY UPDATE
     student_number = '2026-07-00256',
     password_hash = '$2y$12$m41apc2GYjBOFpXjTCgI8uBDiKkhQBcJtB4W6XgbKj21DVyzAJjgS';
