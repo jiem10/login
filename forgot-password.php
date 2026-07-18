@@ -3,7 +3,6 @@ require_once __DIR__ . '/config.php';
 
 const RESET_CODE_LIFETIME_MINUTES = 15;
 const RESET_CODE_MAX_ATTEMPTS = 5;
-const NEW_PASSWORD_PATTERN = '/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/';
 
 function clear_password_reset_state(): void
 {
@@ -134,9 +133,9 @@ function update_password(mysqli $conn, string $password, string $confirmation): 
         ];
     }
 
-    if (!preg_match(NEW_PASSWORD_PATTERN, $password)) {
+    if (!password_is_valid($password)) {
         return [
-            'error' => 'Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.',
+            'error' => PASSWORD_REQUIREMENTS,
             'success' => '',
             'completed' => false,
         ];
@@ -320,27 +319,32 @@ if ($completed) {
                 <label for="new_password">New Password</label>
                 <div class="input-wrapper">
                     <i class="fa-solid fa-lock input-icon"></i>
-                    <input type="password" name="new_password" id="new_password" placeholder="Create a new password" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}" title="Use at least 8 characters with uppercase, lowercase, a number, and a special character." autocomplete="new-password">
+                    <input type="password" name="new_password" id="new_password" placeholder="Create a new password" required minlength="8" pattern="(?=.*[A-Z])(?=.*[^A-Za-z0-9\s.,]).{8,}" title="Use at least 8 characters with an uppercase letter and a special symbol other than a period or comma." autocomplete="new-password">
                     <i class="fa-regular fa-eye toggle-password" data-password-target="new_password"></i>
                 </div>
             </div>
-            <div class="password-strength" aria-live="polite">
+            <div class="password-strength" data-password-strength data-password-input="new_password" aria-live="polite">
                 <div class="password-strength-track">
-                    <div id="password-strength-bar" class="password-strength-bar" role="progressbar" aria-label="Password strength" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+                    <div class="password-strength-bar" data-strength-bar role="progressbar" aria-label="Password strength" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
                 </div>
                 <div class="password-strength-details">
-                    <span id="password-strength-label">Enter a password</span>
-                    <span id="password-length-label">0/8 characters</span>
+                    <span data-strength-label>Enter a password</span>
+                    <span data-length-label>0/8 characters</span>
+                </div>
+                <div class="password-requirements" aria-label="Password requirements">
+                    <span class="password-requirement" data-requirement-length>At least 8 characters</span>
+                    <span class="password-requirement" data-requirement-uppercase>One uppercase letter</span>
+                    <span class="password-requirement" data-requirement-symbol>One special symbol (!, @, #, $, %, &amp;, or *); periods and commas do not count</span>
                 </div>
             </div>
-            <div class="password-requirements">Use 8+ characters with uppercase, lowercase, a number, and a special character. Example: <strong>Hrm@11!A</strong></div>
             <div class="input-group">
                 <label for="confirm_password">Confirm New Password</label>
                 <div class="input-wrapper">
                     <i class="fa-solid fa-lock input-icon"></i>
-                    <input type="password" name="confirm_password" id="confirm_password" placeholder="Confirm your new password" required autocomplete="new-password">
+                    <input type="password" name="confirm_password" id="confirm_password" placeholder="Confirm your new password" required autocomplete="new-password" data-password-confirm-for="new_password" data-password-match-message="reset-password-match" aria-describedby="reset-password-match">
                     <i class="fa-regular fa-eye toggle-password" data-password-target="confirm_password"></i>
                 </div>
+                <div id="reset-password-match" class="password-match-feedback" data-password-match-feedback aria-live="polite"></div>
             </div>
             <button type="submit" class="btn-primary">Reset Password</button>
         </form>
@@ -358,60 +362,99 @@ if ($completed) {
 </div>
 
 <script>
-    document.querySelectorAll('[data-password-target]').forEach((toggle) => {
-        toggle.addEventListener('click', () => {
-            const input = document.getElementById(toggle.dataset.passwordTarget);
-            const hidden = input.type === 'password';
-            input.type = hidden ? 'text' : 'password';
-            toggle.classList.toggle('fa-eye-slash', hidden);
-        });
+document.querySelectorAll('[data-password-target]').forEach((toggle) => {
+    toggle.addEventListener('click', () => {
+        const input = document.getElementById(toggle.dataset.passwordTarget);
+        if (!input) return;
+        const hidden = input.type === 'password';
+        input.type = hidden ? 'text' : 'password';
+        toggle.classList.toggle('fa-eye-slash', hidden);
     });
+});
 
-    const passwordInput = document.getElementById('new_password');
-    const strengthBar = document.getElementById('password-strength-bar');
-    const strengthLabel = document.getElementById('password-strength-label');
-    const lengthLabel = document.getElementById('password-length-label');
+document.querySelectorAll('[data-password-strength]').forEach((meter) => {
+    const input = document.getElementById(meter.dataset.passwordInput);
+    const bar = meter.querySelector('[data-strength-bar]');
+    const label = meter.querySelector('[data-strength-label]');
+    const lengthLabel = meter.querySelector('[data-length-label]');
+    const requirements = {
+        length: meter.querySelector('[data-requirement-length]'),
+        uppercase: meter.querySelector('[data-requirement-uppercase]'),
+        symbol: meter.querySelector('[data-requirement-symbol]'),
+    };
+    if (!input || !bar || !label || !lengthLabel || Object.values(requirements).some((item) => !item)) return;
 
-    if (passwordInput && strengthBar && strengthLabel && lengthLabel) {
-        const updatePasswordStrength = () => {
-            const password = passwordInput.value;
-            const checks = [
-                password.length >= 8,
-                /[a-z]/.test(password),
-                /[A-Z]/.test(password),
-                /\d/.test(password),
-                /[^A-Za-z\d]/.test(password),
-            ];
-            const score = checks.filter(Boolean).length;
-
-            strengthBar.className = 'password-strength-bar';
-            if (password === '') {
-                strengthBar.style.width = '0';
-                strengthLabel.textContent = 'Enter a password';
-                strengthBar.setAttribute('aria-valuenow', '0');
-            } else if (score <= 2) {
-                strengthBar.classList.add('weak');
-                strengthBar.style.width = '33%';
-                strengthLabel.textContent = 'Weak';
-                strengthBar.setAttribute('aria-valuenow', '33');
-            } else if (score < 5) {
-                strengthBar.classList.add('medium');
-                strengthBar.style.width = '66%';
-                strengthLabel.textContent = 'Almost secure';
-                strengthBar.setAttribute('aria-valuenow', '66');
-            } else {
-                strengthBar.classList.add('strong');
-                strengthBar.style.width = '100%';
-                strengthLabel.textContent = 'Strong and secure';
-                strengthBar.setAttribute('aria-valuenow', '100');
-            }
-
-            lengthLabel.textContent = `${password.length}/8 characters`;
+    const update = () => {
+        const password = input.value;
+        const checks = {
+            length: password.length >= 8,
+            uppercase: /[A-Z]/.test(password),
+            symbol: /[^A-Za-z0-9\s.,]/.test(password),
         };
+        const score = Object.values(checks).filter(Boolean).length;
+        Object.keys(checks).forEach((key) => requirements[key].classList.toggle('met', checks[key]));
+        bar.className = 'password-strength-bar';
 
-        passwordInput.addEventListener('input', updatePasswordStrength);
-        updatePasswordStrength();
-    }
+        if (password === '') {
+            bar.style.width = '0';
+            label.textContent = 'Enter a password';
+            bar.setAttribute('aria-valuenow', '0');
+        } else if (score === 1) {
+            bar.classList.add('weak');
+            bar.style.width = '33%';
+            label.textContent = 'Weak';
+            bar.setAttribute('aria-valuenow', '33');
+        } else if (score === 2) {
+            bar.classList.add('medium');
+            bar.style.width = '66%';
+            label.textContent = 'Almost secure';
+            bar.setAttribute('aria-valuenow', '66');
+        } else if (score === 3) {
+            bar.classList.add('strong');
+            bar.style.width = '100%';
+            label.textContent = 'Strong and secure';
+            bar.setAttribute('aria-valuenow', '100');
+        } else {
+            bar.classList.add('weak');
+            bar.style.width = '15%';
+            label.textContent = 'Weak';
+            bar.setAttribute('aria-valuenow', '15');
+        }
+        lengthLabel.textContent = `${password.length}/8 characters`;
+    };
+
+    input.addEventListener('input', update);
+    update();
+});
+
+document.querySelectorAll('[data-password-confirm-for]').forEach((confirmation) => {
+    const password = document.getElementById(confirmation.dataset.passwordConfirmFor);
+    const feedback = document.getElementById(confirmation.dataset.passwordMatchMessage);
+    if (!password || !feedback) return;
+
+    const update = () => {
+        feedback.className = 'password-match-feedback';
+        if (confirmation.value === '') {
+            feedback.textContent = '';
+            confirmation.setCustomValidity('');
+            confirmation.removeAttribute('aria-invalid');
+        } else if (password.value === confirmation.value) {
+            feedback.classList.add('match');
+            feedback.textContent = 'Passwords match.';
+            confirmation.setCustomValidity('');
+            confirmation.setAttribute('aria-invalid', 'false');
+        } else {
+            feedback.classList.add('mismatch');
+            feedback.textContent = 'Passwords do not match.';
+            confirmation.setCustomValidity('Passwords do not match.');
+            confirmation.setAttribute('aria-invalid', 'true');
+        }
+    };
+
+    password.addEventListener('input', update);
+    confirmation.addEventListener('input', update);
+    update();
+});
 </script>
 </body>
 </html>

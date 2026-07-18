@@ -1,5 +1,13 @@
 <?php
 const SESSION_TIMEOUT_SECONDS = 900;
+const PASSWORD_REQUIREMENTS = 'Password must be at least 8 characters and include an uppercase letter and a special symbol other than a period or comma.';
+
+function password_is_valid(string $password): bool
+{
+    return strlen($password) >= 8
+        && preg_match('/[A-Z]/', $password) === 1
+        && preg_match('/[^A-Za-z0-9\s.,]/', $password) === 1;
+}
 
 function start_secure_session(): void
 {

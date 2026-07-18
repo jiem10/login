@@ -53,6 +53,8 @@ function record_login_failure(mysqli $conn, int $userId): int
 }
 
 $error = '';
+$success = (string) ($_SESSION['login_success'] ?? '');
+unset($_SESSION['login_success']);
 
 if (session_has_expired()) {
     end_session();
@@ -119,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="logo-container">
             <img src="https://i.imgur.com/u75GA9x.png" alt="Global Reciprocal Colleges logo" class="logo-img">
         </div>
-        <div class="welcome-text">
+        <div class="welcome-text auth-heading">
             <h3>Login</h3>
             <p>Welcome back! Please login to your account.</p>
         </div>
@@ -127,6 +129,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <?php if ($error !== ''): ?>
         <div class="message"><?= escape($error) ?></div>
+    <?php endif; ?>
+    <?php if ($success !== ''): ?>
+        <div class="message success-message"><?= escape($success) ?></div>
     <?php endif; ?>
 
     <form action="login.php" method="POST">
@@ -157,11 +162,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
         <button type="submit" class="btn-primary">Login</button>
         <div class="divider"><span>OR</span></div>
-        <button type="button" class="btn-secondary" id="createAccount">
+        <a href="register.php" class="btn-secondary" id="createAccount">
             <i class="fa-regular fa-user"></i> Create an account
-        </button>
+        </a>
         <div class="footer-text">
-            Don't have an account? <a href="#">Contact Administrator</a>
+            Don't have an account? <a href="register.php">Register here</a>
         </div>
     </form>
 </div>
