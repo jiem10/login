@@ -1,0 +1,13 @@
+<?php
+// Copy this file to mail-config.local.php and enter your SMTP details.
+// For Gmail, use a Google App Password, not your normal account password.
+return [
+    'host' => 'smtp.gmail.com',
+    'port' => 587,
+    'encryption' => 'tls',
+    'username' => 'your-account@gmail.com',
+    'password' => 'your-16-character-app-password',
+    'from_email' => 'your-account@gmail.com',
+    'from_name' => 'GRC Login',
+    'show_code_on_localhost' => true,
+];

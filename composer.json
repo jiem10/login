@@ -1,0 +1,9 @@
+{
+    "name": "grc/login-module",
+    "description": "GRC login and password-reset module",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "phpmailer/phpmailer": "6.10.0"
+    }
+}

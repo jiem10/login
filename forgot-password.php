@@ -1,5 +1,9 @@
 <?php
+use PHPMailer\PHPMailer\Exception as MailException;
+use PHPMailer\PHPMailer\PHPMailer;
+
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/vendor/autoload.php';
 
 const RESET_CODE_LIFETIME_MINUTES = 15;
 const RESET_CODE_MAX_ATTEMPTS = 5;
@@ -14,16 +18,72 @@ function clear_password_reset_state(): void
     );
 }
 
-function send_verification_email(string $recipient, string $code): bool
+function password_reset_mail_config(): array
 {
-    $subject = 'Your GRC password reset verification code';
-    $body = "Your password reset verification code is: {$code}\r\n\r\n"
-        . 'This code expires in ' . RESET_CODE_LIFETIME_MINUTES . " minutes.\r\n"
-        . 'If you did not request a password reset, please ignore this email.';
-    $headers = "From: GRC Login <no-reply@localhost>\r\n"
-        . 'Content-Type: text/plain; charset=UTF-8';
+    static $config;
 
-    return @mail($recipient, $subject, $body, $headers);
+    if ($config === null) {
+        $config = require __DIR__ . '/mail-config.php';
+    }
+
+    return $config;
+}
+
+function is_local_request(): bool
+{
+    $remoteAddress = $_SERVER['REMOTE_ADDR'] ?? '';
+    return in_array($remoteAddress, ['127.0.0.1', '::1'], true);
+}
+
+function send_verification_email(string $recipient, string $code): array
+{
+    $config = password_reset_mail_config();
+    $host = trim((string) ($config['host'] ?? ''));
+    $fromEmail = trim((string) ($config['from_email'] ?? ''));
+
+    if ($host === '' || !filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+        return [
+            'sent' => false,
+            'error' => 'SMTP is not configured. Copy mail-config.local.php.example to mail-config.local.php and add your mail account.',
+        ];
+    }
+
+    $mail = new PHPMailer(true);
+
+    try {
+        $username = trim((string) ($config['username'] ?? ''));
+        $password = (string) ($config['password'] ?? '');
+        $encryption = strtolower(trim((string) ($config['encryption'] ?? 'tls')));
+
+        $mail->isSMTP();
+        $mail->Host = $host;
+        $mail->Port = (int) ($config['port'] ?? 587);
+        $mail->SMTPAuth = $username !== '';
+        $mail->Username = $username;
+        $mail->Password = $password;
+        $mail->Timeout = 10;
+        $mail->CharSet = PHPMailer::CHARSET_UTF8;
+
+        if ($encryption === 'ssl' || $encryption === 'smtps') {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        } elseif ($encryption === 'tls' || $encryption === 'starttls') {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        } else {
+            $mail->SMTPAutoTLS = false;
+        }
+
+        $mail->setFrom($fromEmail, (string) ($config['from_name'] ?? 'GRC Login'));
+        $mail->addAddress($recipient);
+        $mail->Subject = 'Your GRC password reset verification code';
+        $mail->Body = "Your password reset verification code is: {$code}\r\n\r\n"
+            . 'This code expires in ' . RESET_CODE_LIFETIME_MINUTES . " minutes.\r\n"
+            . 'If you did not request a password reset, please ignore this email.';
+        $mail->send();
+
+        return ['sent' => true, 'error' => ''];
+    } catch (MailException $exception) {
+        return ['sent' => false, 'error' => $mail->ErrorInfo ?: $exception->getMessage()];
+    }
 }
 
 function request_reset_code(mysqli $conn, string $email): array
@@ -62,8 +122,31 @@ function request_reset_code(mysqli $conn, string $email): array
         $stmt->execute();
         $stmt->close();
 
-        if (!send_verification_email($email, $code)) {
-            error_log('Password reset email delivery failed for user ID ' . $user['id']);
+        $delivery = send_verification_email($email, $code);
+        if (!$delivery['sent']) {
+            error_log(
+                'Password reset email delivery failed for user ID '
+                . $user['id'] . ': ' . $delivery['error']
+            );
+
+            $mailConfig = password_reset_mail_config();
+            if (is_local_request() && !empty($mailConfig['show_code_on_localhost'])) {
+                return [
+                    'error' => '',
+                    'success' => 'SMTP is not configured yet. Local testing code: ' . $code,
+                ];
+            }
+
+            $stmt = $conn->prepare('DELETE FROM password_reset_tokens WHERE user_id = ?');
+            $stmt->bind_param('i', $user['id']);
+            $stmt->execute();
+            $stmt->close();
+            clear_password_reset_state();
+
+            return [
+                'error' => 'The verification email could not be sent. Please try again later.',
+                'success' => '',
+            ];
         }
     }
 
